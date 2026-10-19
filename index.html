@@ -53,7 +53,7 @@
   </div>
   <div style="overflow-x:auto">
     <table>
-      <thead><tr><th>#</th><th>Badge</th><th>Gender</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Badge Id</th><th>Gender</th><th></th></tr></thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
@@ -126,12 +126,12 @@ $('manual').onkeydown = e => { if (e.key === 'Enter') $('manualBtn').click(); };
 $('exportBtn').onclick = () => {
   if (!scans.length) return setStatus('Nothing to export', 'warn');
   const esc = v => `"${String(v).replace(/"/g, '""')}"`;
-  const rows = [['Badge', 'Gender']]
+  const rows = [['Badge Id', 'Gender']]
     .concat(scans.map(s => {
       const r = decode(s.encoded);
       return [r.badge, r.gender];
     }));
-  const csv = '\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n');
+  const csv = rows.map(r => r.map(esc).join(',')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   a.download = `badges_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
