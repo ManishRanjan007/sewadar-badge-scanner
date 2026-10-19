@@ -53,28 +53,15 @@
   </div>
   <div style="overflow-x:auto">
     <table>
-      <thead><tr><th>#</th><th>Badge</th><th>Center</th><th>Gender</th><th>Basic</th><th>Encoded</th><th>Time</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Badge</th><th>Gender</th><th></th></tr></thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
 </div>
 
-<div class="card">
-  <strong>Center codes</strong> <small>(code → name, badge prefix)</small>
-  <table><tbody id="centerBody"></tbody></table>
-  <div class="row" style="margin-top:6px">
-    <input id="cCode" placeholder="Code" maxlength="2" size="4">
-    <input id="cName" placeholder="Name" size="8">
-    <input id="cPrefix" placeholder="Prefix" size="6">
-    <button id="addCenter" class="secondary">Add</button>
-  </div>
-</div>
-
 <script>
-const STORE = 'badgeScans', CSTORE = 'badgeCenters';
+const STORE = 'badgeScans';
 let scans = JSON.parse(localStorage.getItem(STORE) || '[]');
-let centers = JSON.parse(localStorage.getItem(CSTORE) || 'null') ||
-  { '00': { name: 'PV', prefix: '' }, '01': { name: 'IND', prefix: 'I' } };
 
 // Encoding: basic -> rotate right 3 -> 9's complement. Decoding reverses it.
 function nineComplement(s) { return s.split('').map(c => String(9 - Number(c))).join(''); }
@@ -84,12 +71,11 @@ function decode(encoded) {
   const code = String(encoded).trim();
   if (!/^\d{8}$/.test(code)) throw new Error('Not an 8-digit code: ' + code);
   const basic = rotateLeft(nineComplement(code), 3);
-  const centerCode = basic.slice(0, 2), g = basic[2], num = basic.slice(3);
+  const g = basic[2], num = basic.slice(3);
   if (g !== '0' && g !== '1') throw new Error('Invalid gender digit in ' + basic);
-  const center = centers[centerCode] || { name: 'Unknown(' + centerCode + ')', prefix: '' };
   const gender = g === '0' ? 'Male' : 'Female';
-  const badge = center.prefix + (g === '0' ? 'M' : 'F') + String(parseInt(num, 10));
-  return { encoded: code, basic: `${centerCode}-${g}-${num}`, centerCode, center: center.name, gender, badge };
+  const badge = (g === '0' ? 'M' : 'F') + String(parseInt(num, 10));
+  return { encoded: code, gender, badge };
 }
 
 const $ = id => document.getElementById(id);
@@ -98,15 +84,13 @@ function save() { localStorage.setItem(STORE, JSON.stringify(scans)); }
 
 function render() {
   $('count').textContent = scans.length;
-  $('tbody').innerHTML = scans.map((s, i) => `<tr><td>${i + 1}</td><td><b>${s.badge}</b></td><td>${s.center}</td>
-    <td>${s.gender}</td><td>${s.basic}</td><td>${s.encoded}</td><td>${new Date(s.time).toLocaleTimeString()}</td>
-    <td><button class="danger" style="padding:4px 8px" onclick="removeScan(${i})">×</button></td></tr>`).reverse().join('');
-  $('centerBody').innerHTML = Object.entries(centers).map(([k, v]) =>
-    `<tr><td>${k}</td><td>${v.name}</td><td>${v.prefix || '—'}</td>
-     <td><button class="danger" style="padding:4px 8px" onclick="removeCenter('${k}')">×</button></td></tr>`).join('');
+  $('tbody').innerHTML = scans.map((s, i) => {
+    const r = decode(s.encoded);
+    return `<tr><td>${i + 1}</td><td><b>${r.badge}</b></td><td>${r.gender}</td>
+    <td><button class="danger" style="padding:4px 8px" onclick="removeScan(${i})">×</button></td></tr>`;
+  }).reverse().join('');
 }
 window.removeScan = i => { scans.splice(i, 1); save(); render(); };
-window.removeCenter = k => { delete centers[k]; localStorage.setItem(CSTORE, JSON.stringify(centers)); render(); };
 
 let lastText = '', lastTime = 0;
 function handle(text) {
@@ -120,7 +104,7 @@ function handle(text) {
     }
     scans.push({ ...r, time: new Date().toISOString() });
     save(); render();
-    setStatus(`✔ ${r.badge} (${r.center}, ${r.gender})`, 'ok');
+    setStatus(`✔ ${r.badge} (${r.gender})`, 'ok');
     if (navigator.vibrate) navigator.vibrate(100);
   } catch (e) { setStatus('✖ ' + e.message, 'err'); }
 }
@@ -142,8 +126,11 @@ $('manual').onkeydown = e => { if (e.key === 'Enter') $('manualBtn').click(); };
 $('exportBtn').onclick = () => {
   if (!scans.length) return setStatus('Nothing to export', 'warn');
   const esc = v => `"${String(v).replace(/"/g, '""')}"`;
-  const rows = [['Badge', 'Center', 'CenterCode', 'Gender', 'BasicBarcode', 'EncodedBarcode', 'ScannedAt']]
-    .concat(scans.map(s => [s.badge, s.center, s.centerCode, s.gender, s.basic, s.encoded, s.time]));
+  const rows = [['Badge', 'Gender']]
+    .concat(scans.map(s => {
+      const r = decode(s.encoded);
+      return [r.badge, r.gender];
+    }));
   const csv = '\ufeff' + rows.map(r => r.map(esc).join(',')).join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -151,13 +138,6 @@ $('exportBtn').onclick = () => {
   a.click();
 };
 $('clearBtn').onclick = () => { if (confirm('Clear all scans?')) { scans = []; save(); render(); } };
-$('addCenter').onclick = () => {
-  const code = $('cCode').value.trim().padStart(2, '0');
-  if (!/^\d{2}$/.test(code) || !$('cName').value.trim()) return alert('Enter 2-digit code and name');
-  centers[code] = { name: $('cName').value.trim(), prefix: $('cPrefix').value.trim() };
-  localStorage.setItem(CSTORE, JSON.stringify(centers));
-  $('cCode').value = $('cName').value = $('cPrefix').value = ''; render();
-};
 
 render();
 </script>
