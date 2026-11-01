@@ -29,11 +29,22 @@
 <div class="card">
   <div id="reader"></div>
   <div class="row">
+    <label for="camera">Camera</label>
+    <select id="camera"><option value="">Automatic rear camera</option></select>
+    <button id="listCameras" class="secondary">List cameras</button>
+  </div>
+  <div class="row">
     <button id="startBtn">Start camera</button>
     <button id="stopBtn" class="secondary" disabled>Stop camera</button>
   </div>
   <label class="row"><input type="checkbox" id="compatibility"> Compatibility mode</label>
+  <label class="row"><input type="checkbox" id="fullFrame"> Scan entire camera view</label>
   <small>Stop the camera, enable this if a clear QR code is not detected, then start again.</small>
+  <div class="row" style="margin-top:8px">
+    <label for="photo">Scan a badge photo</label>
+    <input id="photo" type="file" accept="image/*" style="max-width:100%">
+  </div>
+  <small>If live scanning fails, stop the camera and choose a sharp photo. Photos are decoded on this device, not uploaded.</small>
   <div id="status"></div>
 </div>
 
@@ -76,7 +87,7 @@ function decode(encoded) {
   const g = basic[2], num = basic.slice(3);
   if (g !== '0' && g !== '1') throw new Error('Invalid gender digit in ' + basic);
   const gender = g === '0' ? 'Male' : 'Female';
-  const badge = (g === '0' ? 'M' : 'F') + String(parseInt(num, 10));
+  const badge = (g === '0' ? 'M' : 'F') + String(parseInt(num, 10)).padStart(4, '0');
   return { encoded: code, gender, badge };
 }
 
@@ -112,21 +123,65 @@ function handle(text) {
 }
 
 let scanner;
+function setCameraControls(busy) {
+  for (const id of ['startBtn', 'compatibility', 'fullFrame', 'camera', 'listCameras', 'photo']) {
+    $(id).disabled = busy;
+  }
+}
+$('listCameras').onclick = async () => {
+  setCameraControls(true);
+  try {
+    const cameras = await Html5Qrcode.getCameras();
+    if (!cameras.length) throw new Error('No cameras found');
+    const selected = $('camera').value;
+    $('camera').replaceChildren(new Option('Automatic rear camera', ''));
+    cameras.forEach((camera, i) => {
+      $('camera').add(new Option(camera.label || `Camera ${i + 1}`, camera.id));
+    });
+    $('camera').value = cameras.some(camera => camera.id === selected) ? selected : '';
+    setStatus('Choose a rear camera. If one does not detect the QR, stop and try another.', 'warn');
+  } catch (e) { setStatus('Unable to list cameras: ' + e, 'err'); }
+  finally { setCameraControls(false); }
+};
 $('startBtn').onclick = async () => {
-  $('startBtn').disabled = true; $('compatibility').disabled = true;
+  setCameraControls(true);
   try {
     scanner = new Html5Qrcode('reader', {
       useBarCodeDetectorIfSupported: !$('compatibility').checked
     });
-    await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 250 } }, handle);
+    const config = { fps: 10 };
+    if (!$('fullFrame').checked) config.qrbox = { width: 250, height: 250 };
+    await scanner.start($('camera').value || { facingMode: 'environment' }, config, handle);
     $('stopBtn').disabled = false;
+    setStatus('Camera ready. Hold the QR steady with its white border visible.', 'warn');
   } catch (e) {
-    $('startBtn').disabled = false; $('compatibility').disabled = false;
+    setCameraControls(false);
     setStatus('Camera error: ' + e + ' (page must be opened over HTTPS)', 'err');
   }
 };
 $('stopBtn').onclick = async () => {
-  await scanner.stop(); $('startBtn').disabled = false; $('stopBtn').disabled = true; $('compatibility').disabled = false;
+  $('stopBtn').disabled = true;
+  try {
+    await scanner.stop();
+    setCameraControls(false);
+    setStatus('Camera stopped.', 'warn');
+  } catch (e) {
+    $('stopBtn').disabled = false;
+    setStatus('Unable to stop camera: ' + e, 'err');
+  }
+};
+$('photo').onchange = async () => {
+  const file = $('photo').files[0];
+  if (!file) return;
+  setCameraControls(true);
+  try {
+    scanner = new Html5Qrcode('reader', { useBarCodeDetectorIfSupported: false });
+    setStatus('Reading photo...', 'warn');
+    const text = await scanner.scanFile(file, true);
+    lastText = '';
+    handle(text);
+  } catch (e) { setStatus('Unable to read QR from photo: ' + e + '. Try a closer, sharper photo of the QR.', 'err'); }
+  finally { $('photo').value = ''; setCameraControls(false); }
 };
 $('manualBtn').onclick = () => { lastText = ''; handle($('manual').value); $('manual').value = ''; };
 $('manual').onkeydown = e => { if (e.key === 'Enter') $('manualBtn').click(); };
