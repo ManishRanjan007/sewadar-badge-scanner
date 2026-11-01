@@ -32,6 +32,8 @@
     <button id="startBtn">Start camera</button>
     <button id="stopBtn" class="secondary" disabled>Stop camera</button>
   </div>
+  <label class="row"><input type="checkbox" id="compatibility"> Compatibility mode</label>
+  <small>Stop the camera, enable this if a clear QR code is not detected, then start again.</small>
   <div id="status"></div>
 </div>
 
@@ -111,14 +113,20 @@ function handle(text) {
 
 let scanner;
 $('startBtn').onclick = async () => {
-  scanner = scanner || new Html5Qrcode('reader');
+  $('startBtn').disabled = true; $('compatibility').disabled = true;
   try {
+    scanner = new Html5Qrcode('reader', {
+      useBarCodeDetectorIfSupported: !$('compatibility').checked
+    });
     await scanner.start({ facingMode: 'environment' }, { fps: 10, qrbox: { width: 250, height: 250 } }, handle);
-    $('startBtn').disabled = true; $('stopBtn').disabled = false;
-  } catch (e) { setStatus('Camera error: ' + e + ' (page must be opened over HTTPS)', 'err'); }
+    $('stopBtn').disabled = false;
+  } catch (e) {
+    $('startBtn').disabled = false; $('compatibility').disabled = false;
+    setStatus('Camera error: ' + e + ' (page must be opened over HTTPS)', 'err');
+  }
 };
 $('stopBtn').onclick = async () => {
-  await scanner.stop(); $('startBtn').disabled = false; $('stopBtn').disabled = true;
+  await scanner.stop(); $('startBtn').disabled = false; $('stopBtn').disabled = true; $('compatibility').disabled = false;
 };
 $('manualBtn').onclick = () => { lastText = ''; handle($('manual').value); $('manual').value = ''; };
 $('manual').onkeydown = e => { if (e.key === 'Enter') $('manualBtn').click(); };
